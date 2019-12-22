@@ -74,6 +74,7 @@ _init_env(lua_State *L) {
 	lua_pop(L,1);
 }
 
+//忽略pipe信号
 int sigign() {
 	struct sigaction sa;
 	sa.sa_handler = SIG_IGN;

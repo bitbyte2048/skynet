@@ -8,6 +8,7 @@
 
 #ifndef USE_PTHREAD_LOCK
 
+//skynet提供了自旋锁，使用tas方式实现的自旋锁
 struct spinlock {
 	int lock;
 };

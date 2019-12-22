@@ -31,10 +31,12 @@ struct handle_storage {
 
 static struct handle_storage *H = NULL;
 
+//使用ctx来和slot数组关联
+//采用数组表来管理handle 如果一次o(n)的查询找不到空的slot，则进行扩容处理
 uint32_t
 skynet_handle_register(struct skynet_context *ctx) {
 	struct handle_storage *s = H;
-
+	//写锁保护，因为此场景下明显写的频率会远远小于读
 	rwlock_wlock(&s->lock);
 	
 	for (;;) {

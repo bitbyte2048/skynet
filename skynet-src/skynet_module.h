@@ -9,12 +9,12 @@ typedef void (*skynet_dl_release)(void * inst);
 typedef void (*skynet_dl_signal)(void * inst, int signal);
 
 struct skynet_module {
-	const char * name;
-	void * module;
-	skynet_dl_create create;
-	skynet_dl_init init;
-	skynet_dl_release release;
-	skynet_dl_signal signal;
+	const char * name;			//模块名称
+	void * module;				//模块handle
+	skynet_dl_create create;	//模块提供的create方法
+	skynet_dl_init init;		//模块提供的init方法
+	skynet_dl_release release;	//模块提供的releas方法
+	skynet_dl_signal signal;	//模块提供的signal方法
 };
 
 void skynet_module_insert(struct skynet_module *mod);

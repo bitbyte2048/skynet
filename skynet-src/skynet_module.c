@@ -12,15 +12,17 @@
 
 #define MAX_MODULE_TYPE 32
 
+//共享库的管理 skynet主要实现了一个actor框架，模拟了一个小型的操作系统，其他的功能提供是使用动态加载模块so来实现
 struct modules {
-	int count;
-	struct spinlock lock;
-	const char * path;
-	struct skynet_module m[MAX_MODULE_TYPE];
+	int count;				//模块数量
+	struct spinlock lock;	//自旋锁
+	const char * path;		//so路径	
+	struct skynet_module m[MAX_MODULE_TYPE];	//模块
 };
 
 static struct modules * M = NULL;
 
+//尝试打开模块
 static void *
 _try_open(struct modules *m, const char * name) {
 	const char *l;
@@ -30,6 +32,7 @@ _try_open(struct modules *m, const char * name) {
 
 	int sz = path_size + name_size;
 	//search path
+	//这里根据
 	void * dl = NULL;
 	char tmp[sz];
 	do
@@ -51,6 +54,7 @@ _try_open(struct modules *m, const char * name) {
 			fprintf(stderr,"Invalid C service path\n");
 			exit(1);
 		}
+		//全局以及立即解析符号的形式打开共享库
 		dl = dlopen(tmp, RTLD_NOW | RTLD_GLOBAL);
 		path = l;
 	}while(dl == NULL);
@@ -62,6 +66,7 @@ _try_open(struct modules *m, const char * name) {
 	return dl;
 }
 
+//查询模块
 static struct skynet_module * 
 _query(const char * name) {
 	int i;
@@ -73,6 +78,7 @@ _query(const char * name) {
 	return NULL;
 }
 
+//根据模块以及提供的api名称获取共享库中的函数指针 函数名称=模块名+api_name这种格式ß
 static void *
 get_api(struct skynet_module *mod, const char *api_name) {
 	size_t name_size = strlen(mod->name);
@@ -89,6 +95,7 @@ get_api(struct skynet_module *mod, const char *api_name) {
 	return dlsym(mod->module, ptr);
 }
 
+//获取模块中的函数指针
 static int
 open_sym(struct skynet_module *mod) {
 	mod->create = get_api(mod, "_create");
@@ -99,6 +106,8 @@ open_sym(struct skynet_module *mod) {
 	return mod->init == NULL;
 }
 
+//模块的查询，如果没打开过就open，这里_query进行double check由于，如果多线程调用skynet_module_query，_try_open本身是个满操作，
+//加载so由于缺页中断以及符号解析过程比较慢，所以第一次无需加锁进行，也可能第一次query失败后，第二次查询会成功
 struct skynet_module * 
 skynet_module_query(const char * name) {
 	struct skynet_module * result = _query(name);
@@ -106,7 +115,6 @@ skynet_module_query(const char * name) {
 		return result;
 
 	SPIN_LOCK(M)
-
 	result = _query(name); // double check
 
 	if (result == NULL && M->count < MAX_MODULE_TYPE) {
@@ -129,6 +137,7 @@ skynet_module_query(const char * name) {
 	return result;
 }
 
+//模块插入
 void 
 skynet_module_insert(struct skynet_module *mod) {
 	SPIN_LOCK(M)

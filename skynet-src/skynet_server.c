@@ -39,19 +39,19 @@
 #define CHECKCALLING_DECL
 
 #endif
-
+//skynet 上下文
 struct skynet_context {
 	void * instance;
-	struct skynet_module * mod;
-	void * cb_ud;
+	struct skynet_module * mod;	//skynet的模块
+	void * cb_ud;				//			
 	skynet_cb cb;
-	struct message_queue *queue;
+	struct message_queue *queue;//消息队列
 	FILE * logfile;
 	uint64_t cpu_cost;	// in microsec
 	uint64_t cpu_start;	// in microsec
 	char result[32];
-	uint32_t handle;
-	int session_id;
+	uint32_t handle;			//handle
+	int session_id;				
 	int ref;
 	int message_count;
 	bool init;
@@ -122,13 +122,15 @@ drop_message(struct skynet_message *msg, void *ud) {
 	skynet_send(NULL, source, msg->source, PTYPE_ERROR, 0, NULL, 0);
 }
 
+//创建上下文
 struct skynet_context * 
 skynet_context_new(const char * name, const char *param) {
 	struct skynet_module * mod = skynet_module_query(name);
 
 	if (mod == NULL)
 		return NULL;
-
+	//调用共享库内的create函数，产生一个instance，如果模块是snalua服务，则返回一个snlua结构的对象
+	//当然也可以实现自己的模块，框架本身不管这个结构如何，所以只需要用一个void*表示即可
 	void *inst = skynet_module_instance_create(mod);
 	if (inst == NULL)
 		return NULL;
@@ -137,7 +139,7 @@ skynet_context_new(const char * name, const char *param) {
 
 	ctx->mod = mod;
 	ctx->instance = inst;
-	ctx->ref = 2;
+	ctx->ref = 2;	//引用计数为2 一个来自handle的slots数组，一个来自message_queue
 	ctx->cb = NULL;
 	ctx->cb_ud = NULL;
 	ctx->session_id = 0;
@@ -160,11 +162,14 @@ skynet_context_new(const char * name, const char *param) {
 	CHECKCALLING_BEGIN(ctx)
 	int r = skynet_module_instance_init(mod, inst, ctx, param);
 	CHECKCALLING_END(ctx)
+	//返回0 模块的init函数调用成功
 	if (r == 0) {
+		//减少ctx的引用计数
 		struct skynet_context * ret = skynet_context_release(ctx);
 		if (ret) {
 			ctx->init = true;
 		}
+		//消息队列push进全局队列，消息队列被全局队列管理了
 		skynet_globalmq_push(queue);
 		if (ret) {
 			skynet_error(ret, "LAUNCH %s %s", name, param ? param : "");
@@ -173,10 +178,12 @@ skynet_context_new(const char * name, const char *param) {
 	} else {
 		skynet_error(ctx, "FAILED launch %s", name);
 		uint32_t handle = ctx->handle;
-		skynet_context_release(ctx);
-		skynet_handle_retire(handle);
-		struct drop_t d = { handle };
-		skynet_mq_release(queue, drop_message, &d);
+		skynet_context_release(ctx);		//这里再次递减引用计数，此时会free ctx
+		skynet_handle_retire(handle);		//回收handle
+		struct drop_t d = { handle };	
+		//这里之所以可能还有消息是在ctx创建成功前，并且拿到了handle但是模块内的init函数失败了，
+		//并且有服务向这个handle所属的消息队列push消息了，这些消息也需要处理掉，除了释放本身还需要向发送者发送错误消息
+		skynet_mq_release(queue, drop_message, &d);	
 		return NULL;
 	}
 }
@@ -257,13 +264,14 @@ skynet_isremote(struct skynet_context * ctx, uint32_t handle, int * harbor) {
 	return ret;
 }
 
+//派发处理消息
 static void
 dispatch_message(struct skynet_context *ctx, struct skynet_message *msg) {
 	assert(ctx->init);
 	CHECKCALLING_BEGIN(ctx)
 	pthread_setspecific(G_NODE.handle_key, (void *)(uintptr_t)(ctx->handle));
-	int type = msg->sz >> MESSAGE_TYPE_SHIFT;
-	size_t sz = msg->sz & MESSAGE_TYPE_MASK;
+	int type = msg->sz >> MESSAGE_TYPE_SHIFT;	//取出消息高位的type
+	size_t sz = msg->sz & MESSAGE_TYPE_MASK;	//消息低位的真实的size
 	if (ctx->logfile) {
 		skynet_log_output(ctx->logfile, msg->source, type, msg->session, msg->data, sz);
 	}
